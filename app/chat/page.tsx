@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Navigation } from '@/components/layout/Navigation';
-import { Footer } from '@/components/layout/Footer';
 import { ChatInterface } from '@/components/chat/ChatInterface';
 import { profileStorage, entriesStorage } from '@/lib/storage';
 import type { UserProfile, JournalEntry } from '@/types';
@@ -33,6 +32,7 @@ export default function ChatPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Chat takes full height — no footer padding needed */}
         <main
+          id="main-content"
           className="flex-1 flex flex-col pb-16 md:pb-0"
           style={{ height: 'calc(100vh - 0px)' }}
           aria-label="Chat with MindBridge"

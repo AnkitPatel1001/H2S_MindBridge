@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { profileStorage, entriesStorage, chatStorage, draftStorage } from '@/lib/storage';
-import type { UserProfile, JournalEntry, ChatMessage } from '@/types';
+import type { UserProfile, JournalEntry, ChatMessage, MoodLevel } from '@/types';
 
 const makeProfile = (): UserProfile => ({
   name: 'Ankit',
@@ -9,7 +9,7 @@ const makeProfile = (): UserProfile => ({
   createdAt: new Date().toISOString(),
 });
 
-const makeEntry = (id: string, mood: number = 3): JournalEntry => ({
+const makeEntry = (id: string, mood: MoodLevel = 3): JournalEntry => ({
   id,
   text: `Entry ${id}`,
   mood,
@@ -58,7 +58,7 @@ describe('entriesStorage', () => {
 
   it('updates an existing entry by id', () => {
     entriesStorage.addOrUpdate(makeEntry('e1', 2));
-    entriesStorage.addOrUpdate({ ...makeEntry('e1', 5), text: 'updated' });
+    entriesStorage.addOrUpdate({ ...makeEntry('e1', 5 as MoodLevel), text: 'updated' });
     const all = entriesStorage.getAll();
     expect(all).toHaveLength(1);
     expect(all[0].mood).toBe(5);

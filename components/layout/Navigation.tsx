@@ -60,7 +60,7 @@ export function Navigation() {
 
       {/* Mobile bottom navigation */}
       <nav
-        aria-label="Main navigation"
+        aria-label="Mobile navigation"
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-t border-slate-200 safe-area-inset-bottom"
       >
         <ul className="flex" role="list">

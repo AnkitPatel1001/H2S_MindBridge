@@ -2,7 +2,6 @@
 
 import { memo, useState } from 'react';
 import { ChevronDown, ChevronUp, Calendar, Tag } from 'lucide-react';
-import { Card } from '@/components/ui/Card';
 import { MOOD_OPTIONS } from '@/constants/exams';
 import { formatTimestamp } from '@/lib/utils';
 import { cn } from '@/lib/utils';

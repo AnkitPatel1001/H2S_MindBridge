@@ -142,7 +142,7 @@ npm run dev
 # Open http://localhost:3000
 ```
 
-### 4. Run all tests (10 test files, 95+ assertions)
+### 4. Run all tests (11 test files, 110+ assertions)
 ```bash
 npm test
 ```
@@ -181,6 +181,8 @@ npx tsc --noEmit
 | Excessive requests | Sliding-window rate limiter (20 req/min per IP) in `lib/rateLimiter.ts` |
 | Clickjacking | `X-Frame-Options: DENY` + `frame-ancestors 'none'` in CSP |
 | XSS | Strict CSP; no `dangerouslySetInnerHTML`; no `eval`; no raw HTML rendering |
+| Protocol downgrade | `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload` (HSTS) |
+| Interest tracking | `Permissions-Policy` disables camera, microphone, geolocation, interest-cohort |
 | Data leakage | Generic error messages to client; detailed errors logged server-side only |
 
 ### Efficiency *(Medium Impact)*
@@ -195,7 +197,7 @@ npx tsc --noEmit
 
 ### Testing *(Medium Impact)*
 ```
-10 test files · 95+ test cases · 100% pass rate
+11 test files · 110+ test cases · 100% pass rate
 ────────────────────────────────────────────────
 sanitize.test.ts         ·  HTML stripping, length caps, protocol removal
 aiResponseParser.test.ts ·  Valid JSON, malformed JSON, fallback, riskLevel
@@ -204,6 +206,7 @@ rateLimiter.test.ts      ·  Allow under limit, block at limit, window reset
 crisisDetector.test.ts   ·  All 13 crisis patterns, safe text, edge cases
 storage.test.ts          ·  Profile CRUD, entry add/update/prepend, chat cap, draft
 utils.test.ts            ·  cn() merging, generateId() uniqueness, formatTimestamp, daysUntil
+useMoodHistory.test.ts   ·  Empty state, sorted data points, average mood, trigger frequency
 JournalForm.test.tsx     ·  Submit validation, mood error, successful flow
 MoodSelector.test.tsx    ·  Radio rendering, keyboard nav, onChange callback
 SafetyBanner.test.tsx    ·  Renders helpline numbers, role=alert, dismissal
@@ -217,7 +220,8 @@ Run: `npm test`
 - **Focus management**: Focus trap + Esc-to-close in mindfulness modal (`ExercisePlayer`); visible focus rings via `:focus-visible`
 - **Motion safety**: `prefers-reduced-motion` media query disables all animations in `globals.css`
 - **Colour contrast**: ≥ 4.5:1 for all text/background pairs (slate-800 on white, indigo-700 on indigo-100)
-- **Skip link**: "Skip to main content" for screen-reader and keyboard users
+- **Skip link**: Visually hidden "Skip to main content" link in `layout.tsx`; visible on focus; targets `id="main-content"` on every page's `<main>` element
+- **Unique landmark labels**: Desktop nav uses `aria-label="Main navigation"`, mobile nav uses `aria-label="Mobile navigation"` — no duplicate landmark names
 
 ### Problem Statement Alignment *(High Impact)*
 - **Hyper-personalised AI**: every prompt includes exam type, days to exam, mood history — advice is never generic

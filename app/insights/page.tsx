@@ -46,7 +46,7 @@ export default function InsightsPage() {
       <Navigation />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <main className="flex-1 px-4 py-6 md:px-8 pb-24 md:pb-8">
+        <main id="main-content" className="flex-1 px-4 py-6 md:px-8 pb-24 md:pb-8">
           <header className="mb-6">
             <div className="flex items-center gap-2">
               <BarChart2 className="h-6 w-6 text-indigo-600" aria-hidden="true" />
