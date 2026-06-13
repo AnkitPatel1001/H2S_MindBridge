@@ -33,7 +33,7 @@ const nextConfig = {
   },
   // Ensure API key never leaks to client bundle
   serverRuntimeConfig: {
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    GROQ_API_KEY: process.env.GROQ_API_KEY,
   },
   publicRuntimeConfig: {},
 };
