@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { chatSubmitSchema } from '@/types/schemas';
 import { checkRateLimit } from '@/lib/rateLimiter';
 import { detectCrisisLanguage } from '@/lib/crisisDetector';
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+let _client: OpenAI | null = null;
+
+function getClient(): OpenAI {
+  if (!_client) {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey || apiKey === 'your_key_here') {
+      throw new Error('GROQ_API_KEY is not configured in .env.local');
+    }
+    _client = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1' });
+  }
+  return _client;
+}
+
+const MODEL = process.env.GROQ_CHAT_MODEL ?? 'llama-3.1-8b-instant';
 
 function getClientId(req: NextRequest): string {
   return (
@@ -16,11 +27,7 @@ function getClientId(req: NextRequest): string {
   );
 }
 
-function buildChatSystemPrompt(
-  exam: string,
-  targetDate: string,
-  currentMood?: number,
-): string {
+function buildSystemPrompt(exam: string, targetDate: string, currentMood?: number): string {
   const daysLeft = Math.max(
     0,
     Math.ceil((new Date(targetDate).getTime() - Date.now()) / 86_400_000),
@@ -43,7 +50,6 @@ Your personality:
 - Non-judgmental; never minimise their feelings
 - Gently curious — ask follow-up questions to understand their experience better
 - Grounded and practical — offer specific, actionable perspective when appropriate
-- Occasionally bring in exam-relevant context (study strategies, time management)
 - Use simple, warm language — not clinical or formal
 
 CRITICAL BOUNDARIES:
@@ -53,11 +59,8 @@ CRITICAL BOUNDARIES:
    - Respond with deep empathy and validation
    - STRONGLY encourage contacting a trusted adult and/or a helpline
    - Mention: Tele-MANAS (14416 / 1-800-891-4416, free, 24/7) or iCall (9152987821)
-   - Do not minimise, dismiss, or pivot away from the crisis
-4. Keep responses concise — 2–4 paragraphs maximum. Students are busy.
-5. End with one gentle, open-ended question when appropriate.
-
-You genuinely care about this student's well-being and believe in their ability to navigate this challenging time.`;
+4. Keep responses concise — 2–4 paragraphs maximum.
+5. End with one gentle, open-ended question when appropriate.`;
 }
 
 export async function POST(req: NextRequest) {
@@ -87,46 +90,55 @@ export async function POST(req: NextRequest) {
 
   const { message, history, examContext, currentMood } = parsed.data;
 
-  // Build message array for the API
-  const messages: Anthropic.MessageParam[] = [
+  const userMessage = detectCrisisLanguage(message)
+    ? message + '\n\n[SYSTEM NOTE: Crisis language detected — prioritise empathy and safety resources.]'
+    : message;
+
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: 'system', content: buildSystemPrompt(examContext.exam, examContext.targetDate, currentMood) },
     ...history.map((h) => ({
       role: h.role as 'user' | 'assistant',
       content: h.content,
     })),
-    { role: 'user', content: message },
+    { role: 'user', content: userMessage },
   ];
 
-  // If crisis language detected, add a context note for the AI
-  const crisisNote = detectCrisisLanguage(message)
-    ? '\n\n[SYSTEM NOTE: Crisis language has been detected in this message. Prioritise empathy and safety resources.]'
-    : '';
-
-  if (crisisNote) {
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg) {
-      (lastMsg as { role: 'user' | 'assistant'; content: string }).content += crisisNote;
-    }
-  }
-
   try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+    const client = getClient();
+    const completion = await client.chat.completions.create({
+      model: MODEL,
       max_tokens: 600,
-      system: buildChatSystemPrompt(examContext.exam, examContext.targetDate, currentMood),
       messages,
     });
 
-    const firstBlock = response.content[0];
-    if (!firstBlock || firstBlock.type !== 'text') {
+    const reply = completion.choices[0]?.message?.content ?? '';
+    if (!reply) {
+      return NextResponse.json({ error: 'Empty response from AI. Please try again.' }, { status: 502 });
+    }
+
+    return NextResponse.json({ reply }, { status: 200 });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[/api/chat] Error:', message);
+
+    if (process.env.NODE_ENV === 'development' && message.includes('GROQ_API_KEY')) {
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+
+    if (message.includes('Incorrect API key') || message.includes('401') || message.includes('authentication') || message.includes('invalid_api_key')) {
       return NextResponse.json(
-        { error: 'Unexpected AI response. Please try again.' },
-        { status: 502 },
+        { error: 'Groq authentication failed. Check your GROQ_API_KEY in .env.local.' },
+        { status: 500 },
       );
     }
 
-    return NextResponse.json({ reply: firstBlock.text }, { status: 200 });
-  } catch (err) {
-    console.error('[/api/chat] AI call failed:', err instanceof Error ? err.message : err);
+    if (message.includes('rate_limit') || message.includes('429')) {
+      return NextResponse.json(
+        { error: 'Too many requests to AI. Please wait a moment and try again.' },
+        { status: 429 },
+      );
+    }
+
     return NextResponse.json(
       { error: 'Chat temporarily unavailable. Please try again in a moment.' },
       { status: 503 },

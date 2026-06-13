@@ -1,13 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { journalSubmitSchema } from '@/types/schemas';
 import { parseAIResponse } from '@/lib/aiResponseParser';
 import { checkRateLimit } from '@/lib/rateLimiter';
 import { detectCrisisLanguage } from '@/lib/crisisDetector';
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+let _client: OpenAI | null = null;
+
+function getClient(): OpenAI {
+  if (!_client) {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey || apiKey === 'your_key_here') {
+      throw new Error('GROQ_API_KEY is not configured in .env.local');
+    }
+    _client = new OpenAI({ apiKey, baseURL: 'https://api.groq.com/openai/v1' });
+  }
+  return _client;
+}
+
+const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
 
 function getClientId(req: NextRequest): string {
   return (
@@ -37,7 +48,7 @@ CRITICAL RULES:
 3. Be warm, validating, and non-judgmental. Avoid clinical language.
 4. Keep insights specific to exam-preparation context — not generic.
 
-Respond with ONLY a valid JSON object and absolutely nothing else — no prose, no markdown fences, no explanation:
+You MUST respond with ONLY a valid JSON object — no prose, no markdown fences, no explanation:
 {
   "detectedStressTriggers": ["specific trigger from text", "another specific trigger"],
   "emotionalPattern": "one clear sentence describing the pattern across this entry and mood history",
@@ -52,11 +63,11 @@ Respond with ONLY a valid JSON object and absolutely nothing else — no prose, 
 }
 
 Field guidelines:
-- detectedStressTriggers: 1–5 items; identify SPECIFIC stressors mentioned or implied (e.g. "mock test performance anxiety", not "stress")
-- riskLevel: "low" = mild everyday stress; "moderate" = significant distress but coping; "high" = crisis signs, self-harm ideation, hopelessness — use "high" sparingly and only when clearly indicated
-- copingStrategies: exactly 3; specific and immediately actionable for a student; tie to their exam context
-- mindfulnessExercise: 4–7 clear step-by-step instructions; tailor to current emotional state
-- encouragement: genuine, warm, never toxic positivity; acknowledge difficulty while uplifting`;
+- detectedStressTriggers: 1–5 items; identify SPECIFIC stressors mentioned or implied
+- riskLevel: "low" = mild everyday stress; "moderate" = significant distress; "high" = crisis signs only
+- copingStrategies: exactly 3; specific and immediately actionable for a student
+- mindfulnessExercise: 4–7 clear step-by-step instructions tailored to current emotional state
+- encouragement: genuine, warm, 2–3 sentences; acknowledge difficulty while uplifting`;
 }
 
 export async function POST(req: NextRequest) {
@@ -93,34 +104,58 @@ Current mood: ${mood}/5
 Quick tags selected: ${tags.length > 0 ? tags.join(', ') : 'none'}
 Recent mood history (newest first, 1=Very Low, 5=Very High): [${recentMoods.join(', ')}]
 
-Please analyse this entry and respond with the JSON object as instructed.`;
+Analyse this entry and respond with the JSON object as instructed.`;
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+    const client = getClient();
+    const completion = await client.chat.completions.create({
+      model: MODEL,
+      response_format: { type: 'json_object' },
       max_tokens: 1200,
-      system: buildSystemPrompt(examContext.exam, examContext.targetDate),
-      messages: [{ role: 'user', content: userContent }],
+      messages: [
+        { role: 'system', content: buildSystemPrompt(examContext.exam, examContext.targetDate) },
+        { role: 'user', content: userContent },
+      ],
     });
 
-    const firstBlock = response.content[0];
-    if (!firstBlock || firstBlock.type !== 'text') {
-      return NextResponse.json(
-        { error: 'Unexpected response from AI. Please try again.' },
-        { status: 502 },
-      );
-    }
+    const raw = completion.choices[0]?.message?.content ?? '';
+    const analysis = parseAIResponse(raw);
 
-    const analysis = parseAIResponse(firstBlock.text);
-
-    // Server-side crisis override: if crisis language detected and AI didn't flag it, upgrade risk
+    // Server-side crisis override
     if (detectCrisisLanguage(text) && analysis.riskLevel === 'low') {
       analysis.riskLevel = 'moderate';
     }
 
     return NextResponse.json({ analysis }, { status: 200 });
   } catch (err) {
-    console.error('[/api/analyze] AI call failed:', err instanceof Error ? err.message : err);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[/api/analyze] Error:', message);
+
+    if (process.env.NODE_ENV === 'development' && message.includes('GROQ_API_KEY')) {
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+
+    if (message.includes('Incorrect API key') || message.includes('401') || message.includes('authentication') || message.includes('invalid_api_key')) {
+      return NextResponse.json(
+        { error: 'Groq authentication failed. Check your GROQ_API_KEY in .env.local.' },
+        { status: 500 },
+      );
+    }
+
+    if (message.includes('rate_limit') || message.includes('429')) {
+      return NextResponse.json(
+        { error: 'Too many requests to AI. Please wait a moment and try again.' },
+        { status: 429 },
+      );
+    }
+
+    if (message.includes('model') || message.includes('404')) {
+      return NextResponse.json(
+        { error: 'AI model unavailable. Check GROQ_MODEL in .env.local.' },
+        { status: 500 },
+      );
+    }
+
     return NextResponse.json(
       { error: 'Analysis temporarily unavailable. Please try again in a moment.' },
       { status: 503 },
