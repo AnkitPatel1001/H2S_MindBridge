@@ -33,8 +33,7 @@ export default function ChatPage() {
         {/* Chat takes full height — no footer padding needed */}
         <main
           id="main-content"
-          className="flex-1 flex flex-col pb-16 md:pb-0"
-          style={{ height: 'calc(100vh - 0px)' }}
+          className="flex-1 flex flex-col h-screen pb-16 md:pb-0"
           aria-label="Chat with MindBridge"
         >
           <div className="flex-1 flex flex-col overflow-hidden max-w-3xl w-full mx-auto md:my-4 md:rounded-2xl md:shadow-glass overflow-auto bg-white/50 backdrop-blur-sm">

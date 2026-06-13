@@ -3,7 +3,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { chatStorage } from '@/lib/storage';
 import { generateId } from '@/lib/utils';
-import type { ChatMessage } from '@/types';
+import type { ChatMessage, MoodLevel } from '@/types';
+
+/** Number of prior conversation turns sent to the API to bound token usage. */
+const HISTORY_TURNS = 10;
+
+/** Shape of a successful /api/chat response. */
+interface ChatApiResponse {
+  reply?: string;
+  error?: string;
+}
 
 /**
  * Manages the chat conversation: loads history from localStorage,
@@ -22,7 +31,7 @@ export function useChat() {
     async (
       content: string,
       examContext: { exam: string; targetDate: string },
-      currentMood?: number,
+      currentMood?: MoodLevel,
     ): Promise<void> => {
       setChatError(null);
 
@@ -38,9 +47,8 @@ export function useChat() {
       chatStorage.save(withUser);
       setIsLoading(true);
 
-      // Send only the last 10 turns to the API to limit token usage
       const historyForAPI = withUser
-        .slice(-11, -1)
+        .slice(-(HISTORY_TURNS + 1), -1)
         .map((m) => ({ role: m.role, content: m.content }));
 
       try {
@@ -55,7 +63,7 @@ export function useChat() {
           }),
         });
 
-        const data = (await res.json()) as { reply?: string; error?: string };
+        const data: ChatApiResponse = await res.json() as ChatApiResponse;
 
         if (!res.ok) {
           throw new Error(data.error ?? 'Could not get a response. Please try again.');
@@ -74,7 +82,6 @@ export function useChat() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Something went wrong.';
         setChatError(msg);
-        // Revert to state before the failed request
         setMessages(withUser);
       } finally {
         setIsLoading(false);

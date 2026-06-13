@@ -3,6 +3,12 @@ import OpenAI from 'openai';
 import { chatSubmitSchema } from '@/types/schemas';
 import { checkRateLimit } from '@/lib/rateLimiter';
 import { detectCrisisLanguage } from '@/lib/crisisDetector';
+import { getClientId } from '@/lib/apiUtils';
+
+const RATE_LIMIT_MAX = 20;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const MAX_TOKENS = 600;
+const MODEL = process.env.GROQ_CHAT_MODEL ?? 'llama-3.1-8b-instant';
 
 let _client: OpenAI | null = null;
 
@@ -17,24 +23,15 @@ function getClient(): OpenAI {
   return _client;
 }
 
-const MODEL = process.env.GROQ_CHAT_MODEL ?? 'llama-3.1-8b-instant';
-
-function getClientId(req: NextRequest): string {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ??
-    req.headers.get('x-real-ip') ??
-    'anonymous'
-  );
-}
-
 function buildSystemPrompt(exam: string, targetDate: string, currentMood?: number): string {
   const daysLeft = Math.max(
     0,
     Math.ceil((new Date(targetDate).getTime() - Date.now()) / 86_400_000),
   );
 
+  const moodLabels = ['Very Low', 'Low', 'Neutral', 'Good', 'Very High'] as const;
   const moodContext = currentMood
-    ? `Current mood level: ${currentMood}/5 (${['Very Low', 'Low', 'Neutral', 'Good', 'Very High'][currentMood - 1]}).`
+    ? `Current mood level: ${currentMood}/5 (${moodLabels[currentMood - 1]}).`
     : '';
 
   return `You are MindBridge — a warm, empathetic mental wellness companion for Indian students preparing for high-stakes exams.
@@ -66,7 +63,7 @@ CRITICAL BOUNDARIES:
 export async function POST(req: NextRequest) {
   const clientId = getClientId(req);
 
-  if (!checkRateLimit(clientId, 20, 60_000)) {
+  if (!checkRateLimit(clientId, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS)) {
     return NextResponse.json(
       { error: 'Too many requests. Please wait a moment before continuing.' },
       { status: 429 },
@@ -107,7 +104,7 @@ export async function POST(req: NextRequest) {
     const client = getClient();
     const completion = await client.chat.completions.create({
       model: MODEL,
-      max_tokens: 600,
+      max_tokens: MAX_TOKENS,
       messages,
     });
 
@@ -124,14 +121,17 @@ export async function POST(req: NextRequest) {
     if (process.env.NODE_ENV === 'development' && message.includes('GROQ_API_KEY')) {
       return NextResponse.json({ error: message }, { status: 500 });
     }
-
-    if (message.includes('Incorrect API key') || message.includes('401') || message.includes('authentication') || message.includes('invalid_api_key')) {
+    if (
+      message.includes('Incorrect API key') ||
+      message.includes('401') ||
+      message.includes('authentication') ||
+      message.includes('invalid_api_key')
+    ) {
       return NextResponse.json(
         { error: 'Groq authentication failed. Check your GROQ_API_KEY in .env.local.' },
         { status: 500 },
       );
     }
-
     if (message.includes('rate_limit') || message.includes('429')) {
       return NextResponse.json(
         { error: 'Too many requests to AI. Please wait a moment and try again.' },

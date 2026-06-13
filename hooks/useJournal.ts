@@ -5,6 +5,12 @@ import { entriesStorage, draftStorage } from '@/lib/storage';
 import { generateId } from '@/lib/utils';
 import type { JournalEntry, AIAnalysis, MoodLevel, QuickTag } from '@/types';
 
+/** Shape of a successful /api/analyze response. */
+interface AnalyzeApiResponse {
+  analysis?: AIAnalysis;
+  error?: string;
+}
+
 /**
  * Manages journal entries: loading from storage, submitting to the AI analysis
  * endpoint, and persisting results. Does NOT handle debouncing — callers
@@ -46,7 +52,7 @@ export function useJournal() {
           body: JSON.stringify({ text, mood, tags, examContext, recentMoods }),
         });
 
-        const data = (await res.json()) as { analysis?: AIAnalysis; error?: string };
+        const data: AnalyzeApiResponse = await res.json() as AnalyzeApiResponse;
 
         if (!res.ok) {
           throw new Error(data.error ?? 'Analysis failed. Please try again.');

@@ -9,10 +9,15 @@ import {
 } from '@/lib/aggregations';
 
 /**
- * Derives memoized mood trend data, trigger frequencies, and a weekly
- * summary from the provided journal entries.
+ * Derives memoised mood trend data, trigger frequencies, and a weekly
+ * summary from the provided journal entries. All values are recomputed
+ * only when `entries` reference changes.
  */
-export function useMoodHistory(entries: JournalEntry[]) {
+export function useMoodHistory(entries: JournalEntry[]): {
+  moodDataPoints: MoodDataPoint[];
+  triggerFrequency: TriggerFrequency[];
+  weeklySummary: WeeklySummary;
+} {
   const moodDataPoints = useMemo<MoodDataPoint[]>(
     () => buildMoodDataPoints(entries),
     [entries],
